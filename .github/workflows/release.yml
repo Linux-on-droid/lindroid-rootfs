@@ -1,8 +1,10 @@
-name: droidian rootfs-builder
+name: lindroid rootfs-builder
 
 on:
   workflow_dispatch:
   push:
+    branches:
+      - trixie
   schedule:
     - cron: "59 23 * * *"
 
@@ -20,7 +22,7 @@ jobs:
       - name: Generate matrix
         id: gen-matrix
         run: |
-          JOBS="$(./generate_device_recipe.py --matrix)"
+          JOBS="$(./generate_recipe.py --matrix)"
           echo ::set-output name=matrix::${JOBS}
 
   build:
@@ -42,15 +44,15 @@ jobs:
         run: echo "release_suffix=_${{ env.current_date }}" >> $GITHUB_ENV
 
       - name: Set nightly version
-        if: startsWith(github.ref, 'refs/tags/droidian') != true
-        run: echo "DROIDIAN_VERSION=nightly" >> $GITHUB_ENV
+        if: startsWith(github.ref, 'refs/tags/lindroid') != true
+        run: echo "LINDROID_VERSION=nightly" >> $GITHUB_ENV
 
       - name: Set version
-        if: startsWith(github.ref, 'refs/tags/droidian') == true
-        run: echo "DROIDIAN_VERSION=$(echo ${{ github.ref }} | rev | cut -d'/' -f1 | rev)" >> $GITHUB_ENV
+        if: startsWith(github.ref, 'refs/tags/lindroid') == true
+        run: echo "LINDROID_VERSION=$(echo ${{ github.ref }} | rev | cut -d'/' -f1 | rev)" >> $GITHUB_ENV
 
       - name: Set identifier
-        run: echo "DROIDIAN_IDENTIFIER=${{ matrix.config.product }}-${{ matrix.config.arch }}-${{ matrix.config.edition }}-${{ matrix.config.variant }}-${{ matrix.config.apilevel }}" >> $GITHUB_ENV
+        run: echo "LINDROID_IDENTIFIER=${{ matrix.config.arch }}-${{ matrix.config.edition }}" >> $GITHUB_ENV
 
       - name: Checkout
         uses: actions/checkout@v2
@@ -68,19 +70,19 @@ jobs:
         run: mkdir -p /tmp/buildd-results
 
       - name: Pull container
-        run: docker pull quay.io/droidian/rootfs-builder:next-amd64
+        run: docker pull registry.lindroid.org/lindroid/rootfs-builder:next-amd64
 
       - name: Start Container
-        run: echo CONTAINER_HASH=$(docker run --detach --privileged -v /tmp/buildd-results:/buildd/out -v /dev:/host-dev -v /sys/fs/cgroup:/sys/fs/cgroup -v ${PWD}:/buildd/sources --security-opt seccomp:unconfined quay.io/droidian/rootfs-builder:next-amd64 /sbin/init) >> $GITHUB_ENV
+        run: echo CONTAINER_HASH=$(docker run --detach --privileged -v /tmp/buildd-results:/buildd/out -v /dev:/host-dev -v /sys/fs/cgroup:/sys/fs/cgroup -v ${PWD}:/buildd/sources --security-opt seccomp:unconfined registry.lindroid.org/lindroid/rootfs-builder:next-amd64 /sbin/init) >> $GITHUB_ENV
 
       - name: Build rootfs
         run: |
-          docker exec $CONTAINER_HASH /bin/sh -c 'cd /buildd/sources; DROIDIAN_VERSION="${{ env.DROIDIAN_VERSION }}" ./generate_device_recipe.py ${{ matrix.config.product }} ${{ matrix.config.arch }} ${{ matrix.config.edition }} ${{ matrix.config.variant }} ${{ matrix.config.apilevel }} && debos --disable-fakemachine generated/droidian.yaml'
+          docker exec $CONTAINER_HASH /bin/sh -c 'cd /buildd/sources; ./generate_recipe.py  && debos --disable-fakemachine generated/lindroid-${{ matrix.config.edition }}-${{ matrix.config.arch }}.yaml'
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v3
         with:
-          name: droidian-out-${{ matrix.config.product }}-${{ matrix.config.arch }}-${{ matrix.config.edition }}-${{ matrix.config.variant }}-${{ matrix.config.apilevel }}
+          name: lindroid-out-${{ matrix.config.arch }}-${{ matrix.config.edition }}
           path: out/*
           if-no-files-found: error
           retention-days: 1
@@ -105,29 +107,29 @@ jobs:
 
       - name: Delete old nightly release
         uses: dev-drprasad/delete-tag-and-release@v0.2.1
-        if: startsWith(github.ref, 'refs/tags/droidian') != true
+        if: startsWith(github.ref, 'refs/tags/lindroid') != true
         with:
           delete_release: true # default: false
           tag_name: nightly # tag name to delete
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
       - name: Tag snapshot
-        if: startsWith(github.ref, 'refs/tags/droidian') != true
+        if: startsWith(github.ref, 'refs/tags/lindroid') != true
         uses: tvdias/github-tagger@v0.0.1
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          repo-token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
           tag: nightly
 
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
-          path: droidian-out
+          path: lindroid-out
 
       - name: Create SHA256SUMS
         run: |
-          cd droidian-out
-          for x in droidian-out-*; do
+          cd lindroid-out
+          for x in lindroid-out-*; do
             cd $x
             sha256sum * >> ../SHA256SUMS
             cd ..
@@ -135,23 +137,25 @@ jobs:
 
       - name: Create stable release (drafted)
         id: create_release
-        if: startsWith(github.ref, 'refs/tags/droidian')
+        if: startsWith(github.ref, 'refs/tags/lindroid')
         uses: softprops/action-gh-release@v1
         with:
-          files: droidian-out/SHA256SUMS
+          files: lindroid-out/SHA256SUMS
           tag_name: ${{ github.ref }}
           draft: true
           prerelease: false
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
       - name: Create nightly release
         id: create_nightly
-        if: startsWith(github.ref, 'refs/tags/droidian') != true
+        if: startsWith(github.ref, 'refs/tags/lindroid') != true
         uses: softprops/action-gh-release@v1
         with:
-          files: droidian-out/SHA256SUMS
+          files: lindroid-out/SHA256SUMS
           tag_name: nightly
           draft: false
           prerelease: true
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
 
   publish:
     runs-on: ubuntu-20.04
@@ -170,25 +174,26 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v3
         with:
-          name: droidian-out-${{ matrix.config.product }}-${{ matrix.config.arch }}-${{ matrix.config.edition }}-${{ matrix.config.variant }}-${{ matrix.config.apilevel }}
-          path: droidian-out
+          name: lindroid-out-${{ matrix.config.arch }}-${{ matrix.config.edition }}
+          path: lindroid-out
 
       - name: Create stable release (drafted)
         id: create_release
-        if: startsWith(github.ref, 'refs/tags/droidian')
+        if: startsWith(github.ref, 'refs/tags/lindroid')
         uses: softprops/action-gh-release@v1
         with:
-          files: droidian-out/*
+          files: lindroid-out/*
           tag_name: ${{ github.ref }}
           draft: true
           prerelease: false
 
       - name: Create nightly release
         id: create_nightly
-        if: startsWith(github.ref, 'refs/tags/droidian') != true
+        if: startsWith(github.ref, 'refs/tags/lindroid') != true
         uses: softprops/action-gh-release@v1
         with:
-          files: droidian-out/*
+          files: lindroid-out/*
           tag_name: nightly
           draft: false
           prerelease: true
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}

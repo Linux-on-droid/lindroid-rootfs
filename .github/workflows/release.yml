@@ -80,7 +80,7 @@ jobs:
           docker exec $CONTAINER_HASH /bin/sh -c 'cd /buildd/sources; ./generate_recipe.py  && debos --disable-fakemachine generated/lindroid-${{ matrix.config.edition }}-${{ matrix.config.arch }}.yaml'
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: lindroid-out-${{ matrix.config.arch }}-${{ matrix.config.edition }}
           path: out/*
@@ -122,7 +122,7 @@ jobs:
           tag: nightly
 
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           path: lindroid-out
 
@@ -172,7 +172,7 @@ jobs:
 
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: lindroid-out-${{ matrix.config.arch }}-${{ matrix.config.edition }}
           path: lindroid-out
